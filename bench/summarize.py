@@ -43,18 +43,18 @@ def main(paths):
     print("# Jessamine preview on the SRBench 2.0 black-box selection\n")
     print(
         f"{len(runs)} Jessamine runs. Score = test R² (0 if the model has more than"
-        " 50 nodes), as in eggp_paper_GECCO. Reference methods: 30 runs each"
+        " 50 nodes or the run returned no model), as in eggp_paper_GECCO. Reference methods: 30 runs each"
         " (published results).\n"
     )
 
-    for lam, jl in runs.groupby("lambda_op"):
-        print(f"## lambda_op = {lam:g}\n")
+    for config, jl in runs.groupby("config"):
+        print(f"## {config} (lambda_op = {jl['lambda_op'].iloc[0]:g})\n")
         print(
-            "| dataset | Jessamine median [CI] | runs | over size cap | "
+            "| dataset | Jessamine median [CI] | runs | failed | over size cap | "
             + " | ".join(METHODS)
             + " |"
         )
-        print("|---|---|---|---|" + "---|" * len(METHODS))
+        print("|---|---|---|---|---|" + "---|" * len(METHODS))
         medians = {m: [] for m in ["Jessamine"] + METHODS}
         record = {m: [0, 0, 0] for m in METHODS}  # better, tied, worse
         for ds, j in jl.groupby("dataset"):
@@ -77,8 +77,9 @@ def main(paths):
                     record[m][1] += 1
                 cells.append(f"{b_med:.3f} {mark}")
             over = int((j["size"] > 50).sum())
+            failed = int(j["failed"].sum())
             print(
-                f"| {ds} | {med:.3f} [{lo:.3f}, {hi:.3f}] | {len(j)} | {over} | "
+                f"| {ds} | {med:.3f} [{lo:.3f}, {hi:.3f}] | {len(j)} | {failed} | {over} | "
                 + " | ".join(cells)
                 + " |"
             )
@@ -89,7 +90,8 @@ def main(paths):
             " significant difference.\n"
         )
         print(
-            "| vs | better / tied / worse datasets | Wilcoxon p (medians, 12 datasets) |"
+            f"| vs | better / tied / worse datasets | Wilcoxon p"
+            f" (medians, {len(medians['Jessamine'])} datasets) |"
         )
         print("|---|---|---|")
         for m in METHODS:

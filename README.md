@@ -15,11 +15,14 @@ This is not an SRBench result. It is a quick check run on GitHub Actions.
 - **Data:** the 12 datasets in `eggp_paper_GECCO/srbench_experiment/datasets`, 3 train/test folds each,
   downloaded at run time.
 - **Runs:** 3 per fold (9 per dataset) per configuration. Each fit is limited to 600 s on one CPU core.
-- **Configurations:** operation inventory `+ - * / sqrt exp log sin cos`. The operand penalty `lambda_op`
-  is 1e-10 (the default) or 1e-3. Everything else uses jessaminescikitlearn defaults. There is no
-  hyperparameter tuning, as in the reference runs.
-- **Score:** test R² of the returned model, or 0 if the model has more than 50 SymPy nodes. This is the
-  rule in `eggp_paper_GECCO/srbench_experiment/perfplot.py`.
+- **Configurations:** operation inventory `+ - * / sqrt exp log sin cos`, with `lambda_op` = 1e-3.
+  There is no hyperparameter tuning, as in the reference runs.
+  - `default`: jessaminescikitlearn's genome sizes, which grow with the number of features.
+  - `compact`: `output_size` 3, `scratch_size` 2, `num_time_steps` 2. Smaller models, to respect the
+    50-node cap, as the reference methods were configured to (e.g. PySR `maxsize=50`).
+- **Score:** test R² of the returned model, or 0 if the model has more than 50 SymPy nodes or the run
+  returned no model. This is the rule in `eggp_paper_GECCO/srbench_experiment/perfplot.py`, with failures
+  counted as 0.
 - **Statistics:** for each dataset, the median score with an order-statistic 95% confidence interval and
   a Mann-Whitney test against each reference method. Across datasets, a Wilcoxon signed-rank test on the
   medians.

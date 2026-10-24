@@ -36,9 +36,13 @@ def main():
     parser.add_argument("dataset")
     parser.add_argument("fold", type=int)
     parser.add_argument("run", type=int)
+    parser.add_argument("--config", required=True, help="label for this configuration")
     parser.add_argument("--lambda-op", type=float, required=True)
     parser.add_argument("--max-time", type=float, default=600.0)
     parser.add_argument("--op-inventory", default="+ - * / sqrt exp log sin cos")
+    parser.add_argument("--output-size", type=int)
+    parser.add_argument("--scratch-size", type=int)
+    parser.add_argument("--num-time-steps", type=int)
     parser.add_argument("--data-dir", default="data")
     args = parser.parse_args()
 
@@ -52,34 +56,38 @@ def main():
         lambda_op=args.lambda_op,
         max_time=args.max_time,
         random_state=1000 * args.fold + args.run,
+        output_size=args.output_size,
+        scratch_size=args.scratch_size,
+        num_time_steps=args.num_time_steps,
     )
+    result = {
+        "config": args.config,
+        "dataset": args.dataset,
+        "fold": args.fold,
+        "run": args.run,
+        "lambda_op": args.lambda_op,
+        "max_time": args.max_time,
+    }
     start = time.perf_counter()
-    est.fit(X_train, y_train)
-    fit_seconds = time.perf_counter() - start
-
-    r2_train = r2(est, X_train, y_train)
-    r2_test = r2(est, X_test, y_test)
-    size = node_count(est.model_sympy())
-    valid = size <= MAX_SIZE and np.isfinite(r2_test)
-
-    print(
-        json.dumps(
-            {
-                "dataset": args.dataset,
-                "fold": args.fold,
-                "run": args.run,
-                "lambda_op": args.lambda_op,
-                "op_inventory": args.op_inventory,
-                "max_time": args.max_time,
-                "fit_seconds": round(fit_seconds, 1),
-                "size": size,
-                "r2_train": r2_train,
-                "r2_test": r2_test,
-                "score": r2_test if valid else 0.0,
-                "model": est.model_str(),
-            }
+    try:
+        est.fit(X_train, y_train)
+    except Exception as e:  # noqa: BLE001 - Julia errors arrive as juliacall.JuliaError
+        # A run that returns no model scores 0, like an oversized one.
+        result.update(failed=True, error=f"{type(e).__name__}: {e}"[:300], score=0.0)
+    else:
+        r2_test = r2(est, X_test, y_test)
+        size = node_count(est.model_sympy())
+        valid = size <= MAX_SIZE and np.isfinite(r2_test)
+        result.update(
+            failed=False,
+            size=size,
+            r2_train=r2(est, X_train, y_train),
+            r2_test=r2_test,
+            score=r2_test if valid else 0.0,
+            model=est.model_str(),
         )
-    )
+    result["fit_seconds"] = round(time.perf_counter() - start, 1)
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":
