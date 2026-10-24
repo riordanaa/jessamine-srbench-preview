@@ -1,0 +1,98 @@
+name: Jessamine preview benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs_per_fold:
+        description: Runs per train/test fold (3 folds per dataset)
+        default: "3"
+      max_time:
+        description: Seconds per fit
+        default: "600"
+
+env:
+  DATA_URL: https://raw.githubusercontent.com/folivetti/eggp_paper_GECCO/HEAD/srbench_experiment/datasets
+  JESSAMINE: jessaminescikitlearn @ git+https://github.com/wgm-applied-math/jessaminescikitlearn.git@v0.3.0
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        dataset:
+          - 192_vineyard
+          - 210_cloud
+          - 522_pm10
+          - 557_analcatdata_apnea1
+          - 579_fri_c0_250_5
+          - 606_fri_c2_1000_10
+          - 650_fri_c0_500_50
+          - 678_visualizing_environmental
+          - 1028_SWD
+          - 1089_USCrime
+          - 1193_BNG_lowbwt
+          - 1199_BNG_echoMonths
+        lambda_op: ["1e-10", "1e-3"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install Jessamine
+        run: pip install "$JESSAMINE"
+      - name: Install and precompile Julia packages
+        run: python -c "import jessaminescikitlearn"
+      - name: Download data
+        run: |
+          mkdir -p data
+          for f in 0 1 2; do
+            for split in train test; do
+              curl -fsSL -o "data/${{ matrix.dataset }}_${split}${f}.csv" \
+                "$DATA_URL/${{ matrix.dataset }}_${split}${f}.csv"
+            done
+          done
+      - name: Run (3 at a time, one core each)
+        run: |
+          mkdir -p results logs
+          for fold in 0 1 2; do
+            for run in $(seq 1 "${{ inputs.runs_per_fold }}"); do
+              echo "$fold $run"
+            done
+          done | xargs -P 3 -n 2 --process-slot-var=SLOT sh -c '
+            taskset -c "$SLOT" python bench/run_one.py "${{ matrix.dataset }}" "$1" "$2" \
+              --lambda-op "${{ matrix.lambda_op }}" --max-time "${{ inputs.max_time }}" \
+              > "results/run_$1_$2.json" 2> "logs/run_$1_$2.txt" || echo "fold $1 run $2 failed"
+          ' sh
+          cat results/run_*.json > "results/${{ matrix.dataset }}_lambda${{ matrix.lambda_op }}.jsonl"
+          wc -l results/*.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.dataset }}-lambda${{ matrix.lambda_op }}
+          path: |
+            results/*.jsonl
+            logs/
+
+  summarize:
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install pandas scipy
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Summarize
+        run: |
+          python bench/summarize.py artifacts/*/results/*.jsonl > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: summary
+          path: summary.md
