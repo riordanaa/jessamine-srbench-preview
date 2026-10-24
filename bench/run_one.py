@@ -71,17 +71,20 @@ def main():
     start = time.perf_counter()
     try:
         est.fit(X_train, y_train)
+        # Scoring is inside the try too: a model SymPy cannot evaluate to
+        # numbers (TypeError from lambdify) is as unusable as no model.
+        r2_test = r2(est, X_test, y_test)
+        r2_train = r2(est, X_train, y_train)
+        size = node_count(est.model_sympy())
     except Exception as e:  # noqa: BLE001 - Julia errors arrive as juliacall.JuliaError
-        # A run that returns no model scores 0, like an oversized one.
+        # A run that returns no usable model scores 0, like an oversized one.
         result.update(failed=True, error=f"{type(e).__name__}: {e}"[:300], score=0.0)
     else:
-        r2_test = r2(est, X_test, y_test)
-        size = node_count(est.model_sympy())
         valid = size <= MAX_SIZE and np.isfinite(r2_test)
         result.update(
             failed=False,
             size=size,
-            r2_train=r2(est, X_train, y_train),
+            r2_train=r2_train,
             r2_test=r2_test,
             score=r2_test if valid else 0.0,
             model=est.model_str(),
