@@ -9,6 +9,11 @@ on:
       max_time:
         description: Seconds per fit
         default: "600"
+      configs:
+        description: JSON list of {name, lambda_op, extra} configurations
+        default: >-
+          [{"name": "compact-lambda1e-2", "lambda_op": "1e-2",
+            "extra": "--output-size 3 --scratch-size 2 --num-time-steps 2"}]
 
 env:
   DATA_URL: https://raw.githubusercontent.com/folivetti/eggp_paper_GECCO/HEAD/srbench_experiment/datasets
@@ -17,7 +22,7 @@ env:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -34,11 +39,7 @@ jobs:
           - 1089_USCrime
           - 1193_BNG_lowbwt
           - 1199_BNG_echoMonths
-        config:
-          - name: default
-            args: --lambda-op 1e-3
-          - name: compact
-            args: --lambda-op 1e-3 --output-size 3 --scratch-size 2 --num-time-steps 2
+        config: ${{ fromJSON(inputs.configs) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -66,7 +67,8 @@ jobs:
             done
           done | xargs -P 3 -n 2 --process-slot-var=SLOT sh -c '
             taskset -c "$SLOT" python bench/run_one.py "${{ matrix.dataset }}" "$1" "$2" \
-              --config "${{ matrix.config.name }}" ${{ matrix.config.args }} \
+              --config "${{ matrix.config.name }}" --lambda-op "${{ matrix.config.lambda_op }}" \
+              ${{ matrix.config.extra }} \
               --max-time "${{ inputs.max_time }}" \
               > "results/run_$1_$2.json" 2> "logs/run_$1_$2.txt" || echo "fold $1 run $2 crashed"
           ' sh
@@ -74,8 +76,8 @@ jobs:
           for fold in 0 1 2; do
             for run in $(seq 1 "${{ inputs.runs_per_fold }}"); do
               f="results/run_${fold}_${run}.json"
-              [ -s "$f" ] || printf '{"config": "%s", "dataset": "%s", "fold": %d, "run": %d, "lambda_op": 0.001, "failed": true, "error": "process crashed", "score": 0.0}\n' \
-                "${{ matrix.config.name }}" "${{ matrix.dataset }}" "$fold" "$run" > "$f"
+              [ -s "$f" ] || printf '{"config": "%s", "dataset": "%s", "fold": %d, "run": %d, "lambda_op": %s, "failed": true, "error": "process crashed", "score": 0.0}\n' \
+                "${{ matrix.config.name }}" "${{ matrix.dataset }}" "$fold" "$run" "${{ matrix.config.lambda_op }}" > "$f"
             done
           done
           cat results/run_*.json > "results/${{ matrix.dataset }}_${{ matrix.config.name }}.jsonl"
